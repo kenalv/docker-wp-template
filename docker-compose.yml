@@ -30,9 +30,10 @@ services:
       WORDPRESS_SECURE_AUTH_SALT: ${WORDPRESS_SECURE_AUTH_SALT}
       WORDPRESS_LOGGED_IN_SALT: ${WORDPRESS_LOGGED_IN_SALT}
       WORDPRESS_NONCE_SALT: ${WORDPRESS_NONCE_SALT}
-      # Redis configuration
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      # WordPress Redis Cache plugin configuration
+      WP_REDIS_HOST: redis
+      WP_REDIS_PORT: 6379
+      WP_REDIS_DATABASE: 0
     volumes:
       - wp_uploads:/var/www/html/wp-content/uploads
       - wp_plugins:/var/www/html/wp-content/plugins
@@ -46,6 +47,9 @@ services:
       - "traefik.enable=true"
       
       # HTTP Router - Redirects to HTTPS
+      ## "wp-cms" is the name of the router, can be anything unique change if you will have multiple wordpress containers may conflict
+      ## Host(`${WP_DOMAIN}`) should match your domain name
+
       - "traefik.http.routers.wp-cms.rule=Host(`${WP_DOMAIN}`)"
       - "traefik.http.routers.wp-cms.entrypoints=web"
       - "traefik.http.routers.wp-cms.middlewares=redirect-to-https"
@@ -79,7 +83,8 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: magnetikcr-redis
+    ## Optional: Change wp-cms to your project name to avoid conflicts if running multiple stacksTrju
+    container_name: wp-cms-redis
     volumes:
       - redis_data:/data
     networks:
