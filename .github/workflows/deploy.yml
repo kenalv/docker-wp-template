@@ -1,0 +1,95 @@
+name: Build and Deploy CMS
+
+on:
+  push:
+    branches: ["master"]   # Change to your main branch
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Validate project structure
+        run: |
+          echo "Validating CMS project structure..."
+          ls -la
+          echo "Build step completed (no container image needed)"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'  # Only deploy from master branch
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd ~/stacks/${{ github.event.repository.name }}
+            # Pull latest repository changes
+            git pull origin master
+
+            # Check if this is first time setup or if volumes need population
+            echo "Checking WordPress volumes..."
+            
+            # Backup existing WordPress content if container is running
+            if docker compose ps wp | grep -q "Up"; then
+              echo "Backing up existing WordPress data before volume migration..."
+              docker compose exec wp tar -czf /tmp/wp-content-backup.tar.gz -C /var/www/html wp-content/plugins wp-content/uploads wp-content/themes 2>/dev/null || true
+              docker compose cp wp:/tmp/wp-content-backup.tar.gz ./wp-content-backup.tar.gz 2>/dev/null || true
+              echo "Backup completed"
+            fi
+
+            # Stop containers gracefully
+            docker compose down
+            
+            # Rebuild and start containers
+            docker compose up -d --build --remove-orphans
+            
+            # Wait for WordPress to be ready
+            echo "Waiting for WordPress to start..."
+            for i in {1..60}; do
+              if docker compose ps wp | grep -q "Up"; then
+                echo "WordPress is running"
+                break
+              fi
+              sleep 5
+              echo "Still waiting... ($i/60)"
+            done
+            
+            # Wait a bit more for WordPress to fully initialize
+            sleep 10
+            
+            # Check if volumes are empty and restore if needed
+            if [ -f "./wp-content-backup.tar.gz" ]; then
+              echo "Checking if volumes need to be populated..."
+              PLUGIN_COUNT=$(docker compose exec wp find /var/www/html/wp-content/plugins -maxdepth 1 -type d | wc -l)
+              if [ "$PLUGIN_COUNT" -lt 3 ]; then
+                echo "Volumes appear empty, restoring WordPress content..."
+                docker compose cp ./wp-content-backup.tar.gz wp:/tmp/wp-content-backup.tar.gz
+                docker compose exec wp tar -xzf /tmp/wp-content-backup.tar.gz -C /var/www/html 2>/dev/null || true
+                docker compose exec wp rm -f /tmp/wp-content-backup.tar.gz 2>/dev/null || true
+                docker compose exec wp chown -R www-data:www-data /var/www/html/wp-content 2>/dev/null || true
+                echo "WordPress content restored"
+              else
+                echo "Volumes already populated, skipping restore"
+              fi
+              rm -f ./wp-content-backup.tar.gz
+            fi
+            
+            # Clean up old images
+            docker image prune -f
+            
+            echo "Deployment completed successfully!"
+            docker ps | grep cms
