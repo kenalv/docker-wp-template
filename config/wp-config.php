@@ -41,6 +41,13 @@ if (getenv('WP_ENV') === 'production') {
   define('FORCE_SSL_ADMIN', true);
 }
 
+// Redis Cache Configuration
+define('WP_REDIS_HOST', getenv('WP_REDIS_HOST') ?: 'redis');
+define('WP_REDIS_PORT', getenv('WP_REDIS_PORT') ?: 6379);
+define('WP_REDIS_DATABASE', getenv('WP_REDIS_DATABASE') ?: 0);
+define('WP_REDIS_TIMEOUT', 1);
+define('WP_REDIS_READ_TIMEOUT', 1);
+
 // Load WordPress
 if (!defined('ABSPATH')) define('ABSPATH', dirname(__FILE__) . '/');
 require_once ABSPATH . 'wp-settings.php';
