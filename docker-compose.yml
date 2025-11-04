@@ -1,0 +1,69 @@
+volumes:
+  wp_uploads:
+
+services:
+  wp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      # Mapped to wp-config.php via getenv()
+      WORDPRESS_DB_HOST: ${WORDPRESS_DB_HOST}
+      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER}
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
+      WP_ENV: ${WP_ENV:-production}
+      WP_DEBUG: ${WP_DEBUG:-false}
+      WP_HOME: https://${WP_DOMAIN}
+      WP_SITEURL: https://${WP_DOMAIN}
+      # WordPress Salts for security
+      WORDPRESS_AUTH_KEY: ${WORDPRESS_AUTH_KEY}
+      WORDPRESS_SECURE_AUTH_KEY: ${WORDPRESS_SECURE_AUTH_KEY}
+      WORDPRESS_LOGGED_IN_KEY: ${WORDPRESS_LOGGED_IN_KEY}
+      WORDPRESS_NONCE_KEY: ${WORDPRESS_NONCE_KEY}
+      WORDPRESS_AUTH_SALT: ${WORDPRESS_AUTH_SALT}
+      WORDPRESS_SECURE_AUTH_SALT: ${WORDPRESS_SECURE_AUTH_SALT}
+      WORDPRESS_LOGGED_IN_SALT: ${WORDPRESS_LOGGED_IN_SALT}
+      WORDPRESS_NONCE_SALT: ${WORDPRESS_NONCE_SALT}
+    volumes:
+      - wp_uploads:/var/www/html/wp-content/uploads
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      
+      # HTTP Router - Redirects to HTTPS
+      - "traefik.http.routers.wp-cms.rule=Host(`${WP_DOMAIN}`)"
+      - "traefik.http.routers.wp-cms.entrypoints=web"
+      - "traefik.http.routers.wp-cms.middlewares=redirect-to-https"
+      
+      # HTTPS Router
+      - "traefik.http.routers.wp-cms-secure.rule=Host(`${WP_DOMAIN}`)"
+      - "traefik.http.routers.wp-cms-secure.entrypoints=websecure"
+      - "traefik.http.routers.wp-cms-secure.tls=true"
+      - "traefik.http.routers.wp-cms-secure.tls.certresolver=le"
+      
+      # Service configuration
+      - "traefik.http.services.wp-cms.loadbalancer.server.port=80"
+      
+      # Middleware for HTTP to HTTPS redirect
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
+    
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    
+    # Health check for better monitoring
+    #healthcheck:
+    #  test: ["CMD", "curl", "-f", "http://localhost/wp-login.php"]
+    #  interval: 30s
+    #  timeout: 10s
+    #  retries: 3
+    #  start_period: 40s
+
+networks:
+  web:
+    external: true
