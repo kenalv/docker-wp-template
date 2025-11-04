@@ -1,5 +1,8 @@
 volumes:
   wp_uploads:
+  wp_plugins:
+  wp_themes:
+  redis_data:
 
 services:
   wp:
@@ -27,8 +30,16 @@ services:
       WORDPRESS_SECURE_AUTH_SALT: ${WORDPRESS_SECURE_AUTH_SALT}
       WORDPRESS_LOGGED_IN_SALT: ${WORDPRESS_LOGGED_IN_SALT}
       WORDPRESS_NONCE_SALT: ${WORDPRESS_NONCE_SALT}
+      # Redis configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     volumes:
       - wp_uploads:/var/www/html/wp-content/uploads
+      - wp_plugins:/var/www/html/wp-content/plugins
+      # Theme volume excludes headless-api to allow code updates
+      - wp_themes:/var/www/html/wp-content/themes
+      # Mount your custom theme from source code (overrides volume for this specific theme)
+      - ./wp-content/themes/headless-api:/var/www/html/wp-content/themes/headless-api
     networks:
       - web
     labels:
@@ -38,16 +49,16 @@ services:
       - "traefik.http.routers.wp-cms.rule=Host(`${WP_DOMAIN}`)"
       - "traefik.http.routers.wp-cms.entrypoints=web"
       - "traefik.http.routers.wp-cms.middlewares=redirect-to-https"
-      
+
       # HTTPS Router
       - "traefik.http.routers.wp-cms-secure.rule=Host(`${WP_DOMAIN}`)"
       - "traefik.http.routers.wp-cms-secure.entrypoints=websecure"
       - "traefik.http.routers.wp-cms-secure.tls=true"
       - "traefik.http.routers.wp-cms-secure.tls.certresolver=le"
-      
+
       # Service configuration
       - "traefik.http.services.wp-cms.loadbalancer.server.port=80"
-      
+
       # Middleware for HTTP to HTTPS redirect
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
@@ -55,6 +66,8 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
     
     # Health check for better monitoring
     #healthcheck:
@@ -63,6 +76,20 @@ services:
     #  timeout: 10s
     #  retries: 3
     #  start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: magnetikcr-redis
+    volumes:
+      - redis_data:/data
+    networks:
+      - web
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # Optional: Redis configuration file
+    # volumes:
+    #   - ./config/redis.conf:/usr/local/etc/redis/redis.conf
+    # command: redis-server /usr/local/etc/redis/redis.conf
 
 networks:
   web:
